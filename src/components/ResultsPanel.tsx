@@ -18,7 +18,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
         <div className="card" style={{ background: 'linear-gradient(to bottom, #F0F9FF, #E8F4FD)', borderColor: '#93C5FD', boxShadow: '0 2px 8px -2px rgba(14, 165, 233, 0.15)' }}>
             <div className="text-center">
                 <h2 style={{ fontSize: '1rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-2)' }}>
-                    Maximum Home Price
+                    Maximum Affordable Home Price
                 </h2>
                 <div style={{ fontSize: '2.75rem', fontWeight: 800, color: '#0C4A6E', lineHeight: 1, letterSpacing: '-0.025em' }}>
                     {formatCurrency(result.maxHomePrice)}
