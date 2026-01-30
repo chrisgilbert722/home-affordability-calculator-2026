@@ -16,8 +16,10 @@ export interface AffordabilityResult {
     monthlyPrincipalInterest: number;
     monthlyTaxes: number;
     monthlyInsurance: number;
+    monthlyPMI: number;
     frontEndDTI: number; // Housing costs / income
     backEndDTI: number; // All debts / income
+    downPaymentPercentage: number;
 }
 
 export function calculateAffordability(input: AffordabilityInput): AffordabilityResult {
@@ -44,45 +46,82 @@ export function calculateAffordability(input: AffordabilityInput): Affordability
     let maxLoanAmount: number;
     let monthlyPrincipalInterest: number;
 
+    // PMI rate: 0.5% annual of loan amount, applied monthly
+    const monthlyPMIRate = 0.005 / 12;
+
+    // First, calculate assuming PMI applies (down payment < 20%)
+    // Then check if it actually applies based on the result
+
     if (monthlyRate === 0) {
-        // No interest case
-        // payment = loan/n + homePrice*(taxRate + insuranceRate)
-        // availableForHousing = (homePrice - downPayment)/n + homePrice*(rates)
-        // Solve for homePrice
+        // No interest case with PMI consideration
         const rateSum = monthlyTaxRate + monthlyInsuranceRate;
         const loanFactor = 1 / numPayments;
-        // availableForHousing = homePrice*loanFactor - downPayment/n + homePrice*rateSum
-        // availableForHousing + downPayment/n = homePrice*(loanFactor + rateSum)
-        maxHomePrice = (availableForHousing + input.downPayment / numPayments) / (loanFactor + rateSum);
-        maxHomePrice = Math.max(0, maxHomePrice);
+
+        // With PMI: payment = loan/n + loan*pmiRate + homePrice*rates
+        // = (homePrice - downPayment)/n + (homePrice - downPayment)*pmiRate + homePrice*rates
+        // = (homePrice - downPayment)*(1/n + pmiRate) + homePrice*rates
+        const loanCostFactor = loanFactor + monthlyPMIRate;
+
+        // First solve with PMI
+        let maxHomePriceWithPMI = (availableForHousing + input.downPayment * loanCostFactor) / (loanCostFactor + rateSum);
+        maxHomePriceWithPMI = Math.max(0, maxHomePriceWithPMI);
+
+        // Check if PMI actually applies (down payment < 20% of home price)
+        const downPaymentPctWithPMI = maxHomePriceWithPMI > 0 ? (input.downPayment / maxHomePriceWithPMI) * 100 : 0;
+
+        if (downPaymentPctWithPMI < 20) {
+            maxHomePrice = maxHomePriceWithPMI;
+        } else {
+            // Recalculate without PMI
+            maxHomePrice = (availableForHousing + input.downPayment * loanFactor) / (loanFactor + rateSum);
+            maxHomePrice = Math.max(0, maxHomePrice);
+        }
+
         maxLoanAmount = Math.max(0, maxHomePrice - input.downPayment);
         monthlyPrincipalInterest = maxLoanAmount / numPayments;
     } else {
         // With interest, use amortization formula
-        // M = L * [r(1+r)^n] / [(1+r)^n - 1]
-        // Let factor = [r(1+r)^n] / [(1+r)^n - 1]
         const powerFactor = Math.pow(1 + monthlyRate, numPayments);
         const amortFactor = (monthlyRate * powerFactor) / (powerFactor - 1);
-
-        // Total monthly = L * amortFactor + homePrice * (taxRate + insuranceRate)
-        // L = homePrice - downPayment
-        // Total = (homePrice - downPayment) * amortFactor + homePrice * (taxRate + insuranceRate)
-        // availableForHousing = homePrice * amortFactor - downPayment * amortFactor + homePrice * rates
-        // availableForHousing + downPayment * amortFactor = homePrice * (amortFactor + rates)
-
         const rateSum = monthlyTaxRate + monthlyInsuranceRate;
-        maxHomePrice = (availableForHousing + input.downPayment * amortFactor) / (amortFactor + rateSum);
-        maxHomePrice = Math.max(0, maxHomePrice);
+
+        // With PMI: Total = loan * (amortFactor + pmiRate) + homePrice * rates
+        const loanCostFactor = amortFactor + monthlyPMIRate;
+
+        // First solve with PMI
+        let maxHomePriceWithPMI = (availableForHousing + input.downPayment * loanCostFactor) / (loanCostFactor + rateSum);
+        maxHomePriceWithPMI = Math.max(0, maxHomePriceWithPMI);
+
+        // Check if PMI actually applies
+        const downPaymentPctWithPMI = maxHomePriceWithPMI > 0 ? (input.downPayment / maxHomePriceWithPMI) * 100 : 0;
+
+        if (downPaymentPctWithPMI < 20) {
+            maxHomePrice = maxHomePriceWithPMI;
+        } else {
+            // Recalculate without PMI
+            maxHomePrice = (availableForHousing + input.downPayment * amortFactor) / (amortFactor + rateSum);
+            maxHomePrice = Math.max(0, maxHomePrice);
+        }
+
         maxLoanAmount = Math.max(0, maxHomePrice - input.downPayment);
         monthlyPrincipalInterest = maxLoanAmount * amortFactor;
+    }
+
+    // Calculate down payment percentage
+    const downPaymentPercentage = maxHomePrice > 0 ? (input.downPayment / maxHomePrice) * 100 : 0;
+
+    // Calculate PMI (only if down payment < 20%)
+    let monthlyPMI = 0;
+    if (downPaymentPercentage < 20 && maxLoanAmount > 0) {
+        monthlyPMI = maxLoanAmount * monthlyPMIRate;
     }
 
     // Calculate monthly taxes and insurance based on max home price
     const monthlyTaxes = maxHomePrice * monthlyTaxRate;
     const monthlyInsurance = maxHomePrice * monthlyInsuranceRate;
 
-    // Total monthly payment
-    const maxMonthlyPayment = monthlyPrincipalInterest + monthlyTaxes + monthlyInsurance;
+    // Total monthly payment (including PMI when applicable)
+    const maxMonthlyPayment = monthlyPrincipalInterest + monthlyTaxes + monthlyInsurance + monthlyPMI;
 
     // Calculate actual DTI ratios
     const frontEndDTI = monthlyIncome > 0 ? (maxMonthlyPayment / monthlyIncome) * 100 : 0;
@@ -95,7 +134,9 @@ export function calculateAffordability(input: AffordabilityInput): Affordability
         monthlyPrincipalInterest,
         monthlyTaxes,
         monthlyInsurance,
+        monthlyPMI,
         frontEndDTI,
-        backEndDTI
+        backEndDTI,
+        downPaymentPercentage
     };
 }

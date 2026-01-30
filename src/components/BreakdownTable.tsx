@@ -19,6 +19,7 @@ export const BreakdownTable: React.FC<BreakdownTableProps> = ({ result }) => {
         { label: 'Estimated Principal & Interest', value: formatMoney(result.monthlyPrincipalInterest), isTotal: false },
         { label: 'Estimated Monthly Property Taxes', value: formatMoney(result.monthlyTaxes), isTotal: false },
         { label: 'Estimated Monthly Insurance', value: formatMoney(result.monthlyInsurance), isTotal: false },
+        ...(result.monthlyPMI > 0 ? [{ label: 'Estimated PMI', value: formatMoney(result.monthlyPMI), isTotal: false }] : []),
         { label: 'Total Monthly Payment', value: formatMoney(result.maxMonthlyPayment), isTotal: true },
     ];
 
